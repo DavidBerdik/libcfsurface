@@ -37,6 +37,7 @@ import android.view.Surface;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.logging.Logger;
 
 import eu.chainfire.librootjava.Logger;
 import eu.chainfire.librootjava.RootJava;
@@ -45,6 +46,7 @@ public abstract class SurfaceHost {
     public static String getLaunchString(Context context, Class<?> clazz, String app_process, String niceName) {
         return RootJava.getLaunchString(context, clazz, app_process, new String[] { context.getPackageCodePath() }, niceName);
     }
+    private final String LOG_TAG = "libcfsurface";
 
     private volatile boolean mShow = true;
     private volatile boolean mIsVisible = false;
@@ -287,7 +289,7 @@ public abstract class SurfaceHost {
                         sb.append(param.getName());
                         sb.append(" ");
                     }
-                    Logger.d("constructor[%d]: %s", index, sb.toString());
+                    Log.d(LOG_TAG, "constructor[" + index + "]: " + sb);
                     index++;
                 }
                 throw new RuntimeException("CFSurface: could not create SurfaceControl");
@@ -318,7 +320,7 @@ public abstract class SurfaceHost {
                 }
             } catch (NoSuchMethodException e) {
                 //TODO QP1: this method is messing, check Q source when it becomes available on how to work around
-                Logger.e("QP1: Could not retrieve setSize method");
+                Log.e(LOG_TAG, "QP1: Could not retrieve setSize method", e);
             }
 
             // Get hidden Surface constructor and copyFrom
@@ -355,7 +357,7 @@ public abstract class SurfaceHost {
             return true;
         } catch (Exception e) {
             e.printStackTrace();
-            Logger.ex(e);
+            Log.e(LOG_TAG, "CFSurface: unexpected exception during SurfaceControl creation", e);
             throw new RuntimeException("CFSurface: unexpected exception during SurfaceControl creation");
         }
     }
@@ -365,7 +367,7 @@ public abstract class SurfaceHost {
             mSurface.release();
             cSurfaceControl.getDeclaredMethod("release").invoke(mSurfaceControl);
         } catch (Exception e) {
-            Logger.ex(e);
+            Log.e(LOG_TAG, "Exception in doneSurface()", e);
             return false;
         }
         return true;
@@ -394,7 +396,7 @@ public abstract class SurfaceHost {
                 }
                 mSurfaceControlCloseTransaction.invoke(null);
             } catch (Exception e) {
-                Logger.ex(e);
+                Log.e(LOG_TAG, "Exception in updateSurfaceVisibility()", e);
             }
             mIsVisible = mShow;
         }
@@ -404,7 +406,7 @@ public abstract class SurfaceHost {
         if (mSurface != null) { // we can be called during initSurface
             try {
                 if (mSurfaceControlSetSize == null && mTransactionSetBufferSize == null) { //TODO QP1
-                    Logger.e("QP1: setSize == null");
+                    Log.e(LOG_TAG, "QP1: setSize == null");
                 } else {
                     // Does this nested conditional check have to be nested in this way?
                     mSurfaceControlOpenTransaction.invoke(null);
@@ -420,7 +422,7 @@ public abstract class SurfaceHost {
                     mSurfaceControlCloseTransaction.invoke(null);
                 }
             } catch (Exception e) {
-                Logger.ex(e);
+                Log.e(LOG_TAG, "Exception in updateSurfaceSize()", e);
             }
         }
     }
@@ -575,7 +577,7 @@ public abstract class SurfaceHost {
             doneSurface();
             onDone();
         } catch (Exception e) {
-            Logger.ex(e);
+            Log.e(LOG_TAG, "Exception in run()", e);
         }
         System.exit(0);
     }
