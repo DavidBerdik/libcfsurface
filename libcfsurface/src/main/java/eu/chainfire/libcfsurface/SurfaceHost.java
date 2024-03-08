@@ -39,7 +39,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.logging.Logger;
 
-import eu.chainfire.librootjava.Logger;
 import eu.chainfire.librootjava.RootJava;
 
 public abstract class SurfaceHost {
@@ -70,11 +69,13 @@ public abstract class SurfaceHost {
     private Method mSurfaceControlSetSize = null;
     private Surface mSurface = null;
     private Method mSurfaceControlGetGlobalTransaction = null;
+    private Method mTransactionApply;
     private Method mTransactionShow;
     private Method mTransactionHide;
     private Method mTransactionSetLayer;
     private Method mTransactionSetBufferSize;
     private Object oDisplayManagerGlobal;
+    private Object oTransaction = null;
     private int displayId;
 
     private final boolean checkRotation() {
@@ -305,8 +306,15 @@ public abstract class SurfaceHost {
                 mSurfaceControlShow = cSurfaceControl.getDeclaredMethod("show");
                 mSurfaceControlHide = cSurfaceControl.getDeclaredMethod("hide");
             } else {
-                mSurfaceControlGetGlobalTransaction = cSurfaceControl.getDeclaredMethod("getGlobalTransaction");
                 cTransaction = Class.forName("android.view.SurfaceControl$Transaction");
+                try {
+                    mSurfaceControlGetGlobalTransaction = cSurfaceControl.getDeclaredMethod("getGlobalTransaction");
+                } catch (NoSuchMethodException e) {
+                    // Starting with Android 14 QPR2 (March 2024), getGlobalTransaction() no longer exists.
+                    oTransaction = cTransaction.newInstance();
+                    mTransactionApply = cTransaction.getDeclaredMethod("apply");
+                    Log.d(LOG_TAG, "A14QPR2: Could not retrieve getGlobalTransaction method, so creating new Transaction object instead.");
+                }
                 mTransactionSetLayer = cTransaction.getDeclaredMethod("setLayer", cSurfaceControl, int.class);
                 mTransactionShow = cTransaction.getDeclaredMethod("show", cSurfaceControl);
                 mTransactionHide = cTransaction.getDeclaredMethod("hide", cSurfaceControl);
@@ -331,8 +339,13 @@ public abstract class SurfaceHost {
 
             // Set top z-index
             mSurfaceControlOpenTransaction.invoke(null);
-            if (mSurfaceControlGetGlobalTransaction != null) {
-                // API 31+
+            if (oTransaction != null) {
+                // Android 14 QPR2 (March 2024)+
+                mTransactionSetLayer.invoke(oTransaction, mSurfaceControl, 0x7FFFFFFF);
+                mTransactionApply.invoke(oTransaction);
+            }
+            else if (mSurfaceControlGetGlobalTransaction != null) {
+                // API 31+ to Android 14 QPR2 (March 2024)
                 synchronized (cSurfaceControl) {
                     mTransactionSetLayer.invoke(mSurfaceControlGetGlobalTransaction.invoke(mSurfaceControl), mSurfaceControl, 0x7FFFFFFF);
                 }
@@ -342,7 +355,7 @@ public abstract class SurfaceHost {
             }
             mSurfaceControlCloseTransaction.invoke(null);
 
-            if (mSurfaceControlGetGlobalTransaction != null) {
+            if (oTransaction != null || mSurfaceControlGetGlobalTransaction != null) {
                 // API 31+
                 Class<?> cTypeface = Class.forName("android.graphics.Typeface");
                 @SuppressLint("BlockedPrivateApi") Method mGetDefault = cTypeface.getDeclaredMethod("getDefault");
@@ -377,8 +390,19 @@ public abstract class SurfaceHost {
         if (mShow != mIsVisible) {
             try {
                 mSurfaceControlOpenTransaction.invoke(null);
-                if (mSurfaceControlGetGlobalTransaction != null) {
-                    // API 31+
+                if (oTransaction != null) {
+                    // Android 14 QPR2 (March 2024)+
+                    synchronized (cSurfaceControl) {
+                        if (mShow) {
+                            mTransactionShow.invoke(oTransaction, mSurfaceControl);
+                        } else {
+                            mTransactionHide.invoke(oTransaction, mSurfaceControl);
+                        }
+                        mTransactionApply.invoke(oTransaction);
+                    }
+                }
+                else if (mSurfaceControlGetGlobalTransaction != null) {
+                    // API 31+ to Android 14 QPR2 (March 2024)
                     synchronized (cSurfaceControl) {
                         if (mShow) {
                             mTransactionShow.invoke(mSurfaceControlGetGlobalTransaction.invoke(mSurfaceControl), mSurfaceControl);
@@ -410,8 +434,15 @@ public abstract class SurfaceHost {
                 } else {
                     // Does this nested conditional check have to be nested in this way?
                     mSurfaceControlOpenTransaction.invoke(null);
-                    if (mSurfaceControlGetGlobalTransaction != null) {
-                        // API 31+
+                    if (oTransaction != null) {
+                        // Android 14 QPR2 (Marh 2024)+
+                        synchronized (cSurfaceControl) {
+                            mTransactionSetBufferSize.invoke(oTransaction, mWidth, mHeight);
+                            mTransactionApply.invoke(oTransaction);
+                        }
+                    }
+                    else if (mSurfaceControlGetGlobalTransaction != null) {
+                        // API 31+ to Android 14 QPR2 (March 2024)
                         synchronized (cSurfaceControl) {
                             mTransactionSetBufferSize.invoke(mSurfaceControlGetGlobalTransaction.invoke(mSurfaceControl), mWidth, mHeight);
                         }
